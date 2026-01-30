@@ -45,18 +45,21 @@ def create_kpi_pie(kpi_value):
 
 
 # ============================================================
-# FUNCTION: GENERATE KPI
+# FUNCTION: GENERATE KPI (MAIN LOGIC)
 # ============================================================
 def generate_kpi(sales, mistake):
 
+    # Clean columns
     sales.columns = sales.columns.str.strip().str.upper()
     mistake.columns = mistake.columns.str.strip().str.upper()
 
+    # Standardize AGENT column
     if "AGENT NAME" in sales.columns:
         sales.rename(columns={"AGENT NAME": "AGENT"}, inplace=True)
     if "PERSON" in mistake.columns:
         mistake.rename(columns={"PERSON": "AGENT"}, inplace=True)
 
+    # Standardize date columns
     if "DATE" in sales.columns:
         sales.rename(columns={"DATE": "SO_DATE"}, inplace=True)
     if "DATE" in mistake.columns:
@@ -74,6 +77,7 @@ def generate_kpi(sales, mistake):
         st.error("❌ Could NOT detect SO/BILL column in Mistake File.")
         st.stop()
 
+    # Only SO mistakes
     mistake_SO = mistake[mistake[so_bill_col].astype(str).str.upper().str.replace(" ", "") == "SO"]
 
     # ================= DAILY KPI =====================
@@ -89,18 +93,14 @@ def generate_kpi(sales, mistake):
         how="left"
     ).fillna(0)
 
+    # KPI Calculations
     daily_kpi["KPI_COUNT_OF_MISTAKE_SO"] = (
-        1 - (daily_kpi["MISTAKE_COUNT"] / daily_kpi["SO_COUNT"])
+        1 - (daily_kpi["COUNT_OF_MISTAKE_SO"] / daily_kpi["SO_COUNT"])
     ) * 100
 
     daily_kpi["KPI_NUMBER_OF_MISTAKES"] = (
-        1 - (daily_kpi["TOTAL_MISTAKE_POINTS"] / daily_kpi["SO_COUNT"])
+        1 - (daily_kpi["NUMBER_OF_MISTAKES"] / daily_kpi["SO_COUNT"])
     ) * 100
-
-    daily_kpi.rename(columns={
-        "MISTAKE_COUNT": "COUNT_OF_MISTAKE_SO",
-        "TOTAL_MISTAKE_POINTS": "NUMBER_OF_MISTAKES"
-    }, inplace=True)
 
     # ================= MONTHLY KPI =====================
     monthly_so = sales.groupby(["MONTH", "AGENT"]).size().reset_index(name="SO_COUNT")
@@ -117,11 +117,6 @@ def generate_kpi(sales, mistake):
     monthly_kpi["KPI_NUMBER_OF_MISTAKES"] = (
         1 - (monthly_kpi["TOTAL_MISTAKE_POINTS"] / monthly_kpi["SO_COUNT"])
     ) * 100
-
-    monthly_kpi.rename(columns={
-        "MISTAKE_COUNT": "COUNT_OF_MISTAKE_SO",
-        "TOTAL_MISTAKE_POINTS": "NUMBER_OF_MISTAKES"
-    }, inplace=True)
 
     return daily_kpi, monthly_kpi
 
@@ -157,6 +152,7 @@ if sales_file and mistake_file:
         daily_kpi = daily_kpi[daily_kpi["AGENT"].isin(agent_filter)]
         monthly_kpi = monthly_kpi[monthly_kpi["AGENT"].isin(agent_filter)]
 
+    # ================= DAILY FILTER =================
     if view_type == "Daily KPI":
         date_range = st.sidebar.date_input(
             "Select Date Range",
@@ -167,12 +163,14 @@ if sales_file and mistake_file:
             daily_kpi = daily_kpi[(daily_kpi["SO_DATE"] >= start) &
                                   (daily_kpi["SO_DATE"] <= end)]
 
+    # ================= MONTHLY FILTER =================
     if view_type == "Monthly KPI":
-        month_filter = st.sidebar.selectbox("Select Month",
-                                            sorted(monthly_kpi["MONTH"].unique()))
+        month_filter = st.sidebar.selectbox("Select Month", sorted(monthly_kpi["MONTH"].unique()))
         monthly_kpi = monthly_kpi[monthly_kpi["MONTH"] == month_filter]
 
-    # ---------------- TABLE + CHARTS ----------------
+    # ============================================================
+    # DAILY KPI VIEW
+    # ============================================================
     if view_type == "Daily KPI":
 
         st.subheader("📅 Daily KPI Table")
@@ -196,7 +194,6 @@ if sales_file and mistake_file:
             markers=True,
             title="Daily Number of Mistakes Trend"
         )
-        fig_trend.update_layout(xaxis_title="Date", yaxis_title="Number of Mistakes")
         st.plotly_chart(fig_trend, use_container_width=True)
 
         # -------- KPI PIE CHART ----------
@@ -206,22 +203,46 @@ if sales_file and mistake_file:
         else:
             st.info("➡ Select ONE agent to view KPI Pie chart")
 
-    # ---------------- MONTHLY KPI ----------------
+    # ============================================================
+    # MONTHLY KPI VIEW (WITH DAILY TREND)
+    # ============================================================
     else:
         st.subheader("📅 Monthly KPI Table")
         st.dataframe(monthly_kpi, use_container_width=True)
 
+        # ----- MONTHLY BAR -------
         st.markdown("### 📊 Sales Orders vs Mistake Orders (Monthly)")
         bar_data = monthly_kpi.groupby("AGENT")[["SO_COUNT", "COUNT_OF_MISTAKE_SO"]].sum()
         st.bar_chart(bar_data)
 
+        # -------- DAILY TREND (Filtered by month) --------
+        st.markdown("### 📈 Daily Trend – Number of Mistakes (Filtered by Month)")
+
+        selected_month = monthly_kpi["MONTH"].iloc[0]
+        daily_filtered = daily_kpi[daily_kpi["MONTH"] == selected_month]
+
+        trend_data = daily_filtered.groupby(["SO_DATE", "AGENT"])["NUMBER_OF_MISTAKES"].sum().reset_index()
+
+        fig_trend = px.line(
+            trend_data,
+            x="SO_DATE",
+            y="NUMBER_OF_MISTAKES",
+            color="AGENT",
+            markers=True,
+            title=f"Daily Mistake Trend for {selected_month}"
+        )
+        st.plotly_chart(fig_trend, use_container_width=True)
+
+        # ----- KPI PIE ------
         if len(monthly_kpi["AGENT"].unique()) == 1:
             kpi_val = float(monthly_kpi["KPI_COUNT_OF_MISTAKE_SO"].mean())
             st.plotly_chart(create_kpi_pie(kpi_val))
         else:
             st.info("➡ Select ONE agent to view KPI Pie chart")
 
-    # ---------------- DOWNLOAD EXCEL ----------------
+    # ============================================================
+    # EXCEL DOWNLOAD
+    # ============================================================
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         daily_kpi.to_excel(writer, sheet_name="DAILY_SO_KPI", index=False)
