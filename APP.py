@@ -40,7 +40,7 @@ def create_kpi_pie(kpi_value):
         hole=0.55
     )
     fig.update_traces(textinfo="label+percent")
-    fig.update_layout(title="KPI Breakdown (Green = Good Orders, Red = Mistake Impact)")
+    fig.update_layout(title="KPI Breakdown (Green = Good Orders, Red = Mistakes)")
     return fig
 
 
@@ -82,8 +82,12 @@ def generate_kpi(sales, mistake):
     daily_mp = mistake_SO.groupby(["MISTAKE_DATE", "AGENT"])["NO OF MISTAKE"].sum().reset_index(name="TOTAL_MISTAKE_POINTS")
 
     daily_all = pd.merge(daily_mc, daily_mp, on=["MISTAKE_DATE", "AGENT"], how="outer").fillna(0)
-    daily_kpi = pd.merge(daily_so, daily_all, left_on=["SO_DATE", "AGENT"],
-                         right_on=["MISTAKE_DATE", "AGENT"], how="left").fillna(0)
+    daily_kpi = pd.merge(
+        daily_so, daily_all,
+        left_on=["SO_DATE", "AGENT"],
+        right_on=["MISTAKE_DATE", "AGENT"],
+        how="left"
+    ).fillna(0)
 
     daily_kpi["KPI_COUNT_OF_MISTAKE_SO"] = (
         1 - (daily_kpi["MISTAKE_COUNT"] / daily_kpi["SO_COUNT"])
@@ -148,8 +152,7 @@ if sales_file and mistake_file:
     st.sidebar.header("🔍 Filters")
     view_type = st.sidebar.selectbox("View Mode", ["Daily KPI", "Monthly KPI"])
 
-    agent_filter = st.sidebar.multiselect("Filter by Agent Name",
-                                          sorted(daily_kpi["AGENT"].unique()))
+    agent_filter = st.sidebar.multiselect("Filter by Agent Name", sorted(daily_kpi["AGENT"].unique()))
     if agent_filter:
         daily_kpi = daily_kpi[daily_kpi["AGENT"].isin(agent_filter)]
         monthly_kpi = monthly_kpi[monthly_kpi["AGENT"].isin(agent_filter)]
@@ -183,19 +186,17 @@ if sales_file and mistake_file:
         # -------- DAILY TREND CHART ----------
         st.markdown("### 📈 Daily Trend – Number of Mistakes")
 
-        trend_mistake = daily_kpi.groupby(["SO_DATE", "AGENT"])[
-            ["COUNT_OF_MISTAKE_SO", "NUMBER_OF_MISTAKES"]
-        ].sum().reset_index()
+        trend_data = daily_kpi.groupby(["SO_DATE", "AGENT"])["NUMBER_OF_MISTAKES"].sum().reset_index()
 
         fig_trend = px.line(
-            trend_mistake,
+            trend_data,
             x="SO_DATE",
-            y=["COUNT_OF_MISTAKE_SO", "NUMBER_OF_MISTAKES"],
+            y="NUMBER_OF_MISTAKES",
             color="AGENT",
             markers=True,
-            title="Daily Mistake Trend"
+            title="Daily Number of Mistakes Trend"
         )
-        fig_trend.update_layout(xaxis_title="Date", yaxis_title="Mistake Count")
+        fig_trend.update_layout(xaxis_title="Date", yaxis_title="Number of Mistakes")
         st.plotly_chart(fig_trend, use_container_width=True)
 
         # -------- KPI PIE CHART ----------
