@@ -180,6 +180,10 @@ if sales_file and mistake_file:
 
     sales = pd.read_excel(sales_file)
     mistake = pd.read_excel(mistake_file)
+    mistake = pd.read_excel(mistake_file)
+
+# 🔍 DEBUG: SHOW EXACT COLUMN NAMES
+    st.write("DEBUG: Mistake Columns →", mistake.columns.tolist())
 
     daily_kpi, monthly_kpi = generate_kpi(sales, mistake)
 
